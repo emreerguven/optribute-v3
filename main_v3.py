@@ -254,11 +254,7 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
     sample = [dist_sub[0][j] for j in range(1, min(n, 15))]
     avg_dist = int(sum(sample) / len(sample)) if sample else 5000
 
-    if req.optimization_goal == "min_vehicles":
-        # High fixed cost per vehicle → minimize active vehicles
-        routing.SetFixedCostOfAllVehicles(max(int(avg_dist * avg_stops * 1.5), 50000))
-
-    elif req.optimization_goal == "balance":
+    if req.optimization_goal == "balance":
         # Penalize imbalance in stop counts
         stop_dim.SetGlobalSpanCostCoefficient(avg_dist)
 
@@ -266,27 +262,32 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
         # Penalize longest route time
         time_dim.SetGlobalSpanCostCoefficient(300)
 
-    else:  # "distance" — default
-        pass
+    # Force vehicle usage via HARD stop cap per vehicle
+    if req.optimization_goal == "min_vehicles":
+        # Min vehicles: high fixed cost, no forcing
+        routing.SetFixedCostOfAllVehicles(max(int(avg_dist * avg_stops * 1.5), 50000))
+    else:
+        # Hard cap: no vehicle can take more than ceil(n/k * 1.5) stops
+        # This GUARANTEES multiple vehicles are used
+        # 15 stops / 3 vehicles → cap = ceil(5 * 1.5) = 8 → forces at least 2 vehicles
+        # max_ratio can relax this further if explicitly set high
+        base_cap = math.ceil(num_stops / v_count * 1.5)
+        ratio_cap = math.ceil(avg_stops * req.max_ratio)
+        hard_cap = min(base_cap, ratio_cap, num_stops)
+        # Safety: cap must allow feasible solution
+        hard_cap = max(hard_cap, math.ceil(num_stops / v_count))
 
-    # Soft force vehicles (unless min_vehicles mode)
-    if req.optimization_goal != "min_vehicles":
-        max_forceable = min(v_count, num_stops)
-        # Penalty must be high enough that NOT using a vehicle is expensive
-        # avg_dist * avg_stops ≈ cost of one average route
-        force_penalty = avg_dist * avg_stops * 3
-        for vid in range(max_forceable):
+        log.info(f"Stop hard cap: {hard_cap} per vehicle (n={num_stops}, v={v_count}, ratio={req.max_ratio})")
+
+        for vid in range(v_count):
+            stop_dim.CumulVar(routing.End(vid)).SetRange(0, hard_cap)
+
+        # Soft-force: each vehicle should get at least 1 stop
+        force_penalty = avg_dist * avg_stops * 5
+        for vid in range(min(v_count, num_stops)):
             stop_dim.SetCumulVarSoftLowerBound(
                 routing.End(vid), 1, force_penalty
             )
-        log.info(f"Vehicle forcing: {max_forceable} vehicles, penalty={force_penalty}")
-
-    # Max ratio constraint (soft upper bound on stops per vehicle)
-    max_per = int(avg_stops * req.max_ratio)
-    for vid in range(v_count):
-        stop_dim.SetCumulVarSoftUpperBound(
-            routing.End(vid), max_per, avg_dist
-        )
 
     # ── Search parameters ──
     params = pywrapcp.DefaultRoutingSearchParameters()
