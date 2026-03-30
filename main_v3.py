@@ -264,20 +264,21 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
 
     # Force vehicle usage via HARD stop cap per vehicle
     if req.optimization_goal == "min_vehicles":
-        # Min vehicles: high fixed cost, no forcing
         routing.SetFixedCostOfAllVehicles(max(int(avg_dist * avg_stops * 1.5), 50000))
     else:
-        # Hard cap: no vehicle can take more than ceil(n/k * 1.5) stops
-        # This GUARANTEES multiple vehicles are used
-        # 15 stops / 3 vehicles → cap = ceil(5 * 1.5) = 8 → forces at least 2 vehicles
-        # max_ratio can relax this further if explicitly set high
-        base_cap = math.ceil(num_stops / v_count * 1.5)
+        # Key insight: to force k vehicles, (k-1)*cap must be < n
+        # So cap = floor((n-1) / (k-1)) guarantees k-th vehicle is needed
+        if v_count >= 2:
+            hard_cap = (num_stops - 1) // (v_count - 1)
+        else:
+            hard_cap = num_stops
+        # Respect max_ratio (user can loosen the cap)
         ratio_cap = math.ceil(avg_stops * req.max_ratio)
-        hard_cap = min(base_cap, ratio_cap, num_stops)
-        # Safety: cap must allow feasible solution
+        hard_cap = min(hard_cap, ratio_cap)
+        # Feasibility: cap * v_count must be >= num_stops
         hard_cap = max(hard_cap, math.ceil(num_stops / v_count))
 
-        log.info(f"Stop hard cap: {hard_cap} per vehicle (n={num_stops}, v={v_count}, ratio={req.max_ratio})")
+        log.info(f"Hard cap: {hard_cap}/vehicle (n={num_stops}, v={v_count})")
 
         for vid in range(v_count):
             stop_dim.CumulVar(routing.End(vid)).SetRange(0, hard_cap)
