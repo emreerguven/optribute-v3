@@ -235,7 +235,7 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
             tw_end = tw_start + window_dur
 
         effective_start = max(tw_start, req.route_start_time)
-        time_dim.CumulVar(idx).SetRange(effective_start, effective_start)  # will use soft bound below
+        time_dim.CumulVar(idx).SetRange(effective_start, max_time)
         time_dim.SetCumulVarSoftUpperBound(idx, tw_end, 50000)
 
     # ── Optimization goal specifics ──
@@ -290,24 +290,21 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
     params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     params.time_limit.seconds = req.time_limit
 
-    # ★ Enable all local search operators for best quality
-    params.local_search_operators.use_relocate = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_relocate_pair = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_relocate_neighbors = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_exchange = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_cross = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_cross_exchange = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_two_opt = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_or_opt = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_lin_kernighan = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_tsp_opt = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_make_active = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_make_inactive = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_make_chain_inactive = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_swap_active = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_extended_swap_active = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_path_lns = pywrapcp.BOOL_TRUE
-    params.local_search_operators.use_full_path_lns = pywrapcp.BOOL_TRUE
+    # Enable local search operators (version-safe)
+    try:
+        ops = params.local_search_operators
+        ops.use_relocate = pywrapcp.BOOL_TRUE
+        ops.use_relocate_pair = pywrapcp.BOOL_TRUE
+        ops.use_exchange = pywrapcp.BOOL_TRUE
+        ops.use_cross = pywrapcp.BOOL_TRUE
+        ops.use_two_opt = pywrapcp.BOOL_TRUE
+        ops.use_or_opt = pywrapcp.BOOL_TRUE
+        ops.use_lin_kernighan = pywrapcp.BOOL_TRUE
+        ops.use_tsp_opt = pywrapcp.BOOL_TRUE
+        ops.use_path_lns = pywrapcp.BOOL_TRUE
+        ops.use_full_path_lns = pywrapcp.BOOL_TRUE
+    except Exception as e:
+        log.warning(f"Some local search operators not available: {e}")
 
     # ── Solve ──
     t0 = time.time()
