@@ -272,10 +272,14 @@ def solve_single_depot(depot, customers, dist_matrix_full, dur_matrix_full, req:
     # Soft force vehicles (unless min_vehicles mode)
     if req.optimization_goal != "min_vehicles":
         max_forceable = min(v_count, num_stops)
+        # Penalty must be high enough that NOT using a vehicle is expensive
+        # avg_dist * avg_stops ≈ cost of one average route
+        force_penalty = avg_dist * avg_stops * 3
         for vid in range(max_forceable):
             stop_dim.SetCumulVarSoftLowerBound(
-                routing.End(vid), 1, avg_dist * 2
+                routing.End(vid), 1, force_penalty
             )
+        log.info(f"Vehicle forcing: {max_forceable} vehicles, penalty={force_penalty}")
 
     # Max ratio constraint (soft upper bound on stops per vehicle)
     max_per = int(avg_stops * req.max_ratio)
